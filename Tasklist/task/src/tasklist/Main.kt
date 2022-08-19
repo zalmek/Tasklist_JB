@@ -1,11 +1,69 @@
 package tasklist
 
 import TaskObject
+import com.squareup.moshi.Moshi
+import com.squareup.moshi.Types
+import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import kotlinx.datetime.*
+import kotlinx.datetime.serializers.LocalDateTimeIso8601Serializer
+import java.io.File
 import java.time.LocalTime
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
+/**
+ * Prints the list of Tasks in "Table" format
+ * */
+private fun printTasklist(list: MutableList<TaskObject>, currentDate: LocalDate) {
+    println(
+        "+----+------------+-------+---+---+--------------------------------------------+\n" +
+                "| N  |    Date    | Time  | P | D |                   Task                     |\n" +
+                "+----+------------+-------+---+---+--------------------------------------------+"
+    )
+    for (i in list.indices) {
+        println(
+            "| ${i + 1}" +
+                    " ".repeat(3 - (i + 1).toString().length)
+                    + "| " + list[i].date
+                    + " | " + (if (list[i].time.hour < 10) "0${list[i].time.hour}" else list[i].time.hour)
+                    + ":" + (if (list[i].time.minute < 10) "0${list[i].time.minute}" else list[i].time.minute)
+                    + " | " + priorityToColor(list[i].priority)
+                    + " | " + dueToColor(daysUntil(currentDate, list[i].date))
+                    + " |" + convertTaskToStr(list[i].task)
+        )
+    }
+}
+
+/**
+ * Convert priority tag to color string */
+fun priorityToColor(priority: String): String {
+    if (priority == "C") {
+        return ("\u001B[101m \u001B[0m")
+    } else if (priority == "H") {
+        return ("\u001B[103m \u001B[0m")
+    } else if (priority == "N") {
+        return ("\u001B[102m \u001B[0m")
+    } else if (priority == "L") {
+        return ("\u001B[104m \u001B[0m")
+    }
+    return ("")
+}
+
+/**
+ * Convert due tag to color string */
+fun dueToColor(due: String): String {
+    if (due == "I") {
+        return ("\u001B[102m \u001B[0m")
+    } else if (due == "T") {
+        return ("\u001B[103m \u001B[0m")
+    } else if (due == "O") {
+        return ("\u001B[101m \u001B[0m")
+    }
+    return ("")
+}
+
+/**
+ * Calculates number of days until deadline */
 fun daysUntil(currentDate: LocalDate, taskDate: LocalDate): String {
     val numberOfDays = currentDate.daysUntil(taskDate)
     if (numberOfDays > 0) {
@@ -16,6 +74,8 @@ fun daysUntil(currentDate: LocalDate, taskDate: LocalDate): String {
         return "O"
 }
 
+/**
+ * Generates task from information provided by user */
 private fun setTask(
     taskObject: TaskObject,
 ) {
@@ -36,6 +96,8 @@ private fun setTask(
     }
 }
 
+/**
+ * Generates time from information provided by user. Checks if provided time is correct. */
 private fun getTime(): String {
     println("Input the time (hh:mm):")
     var time = correctTime(readln().trim())
@@ -52,6 +114,9 @@ private fun getTime(): String {
     return time
 }
 
+/**
+ * Generates date from information provided by user. Checks if provided date is correct.
+ * Uses extra function to make the provided date in the format : yyyy-mm-dd*/
 private fun getDate(): String {
     println("Input the date (yyyy-mm-dd):")
     var date = correctDate(readln().trim())
@@ -69,7 +134,8 @@ private fun getDate(): String {
     return date
 }
 
-
+/**
+ * Generates priority from information provided by user. Checks if provided priority is correct. */
 fun getPriority(): String {
     while (true) {
         println("Input the task priority (C, H, N, L):")
@@ -111,6 +177,8 @@ fun getPriority(): String {
     }
 }
 
+/**
+ * Convert provided date to format: yyyy-mm-dd */
 fun correctDate(date: String): String {
     var correctdate: String = date
     if (!correctdate.contains(Regex("-\\d{1,2}-"))) {
@@ -130,6 +198,8 @@ fun correctDate(date: String): String {
     }
 }
 
+/**
+ * Convert provided time to format: hh-mm-ss */
 fun correctTime(time: String): String {
     if (time.length == 4) {
         if (time[1] == ':') {
@@ -142,24 +212,25 @@ fun correctTime(time: String): String {
         return time
 }
 
+/**
+ * Convert given task to multiline string ("Table look") with length of task colomn equals 44 */
 fun convertTaskToStr(task: String): String {
-    var count=0
+    var count = 0
     var initStr = ""
-    for (i in task.indices){
-        if (task[i]=='\n' || count==44){
-            initStr+=" ".repeat(44-count)+"|\n|    |            |       |   |   |"
-            count=0
-            if (task[i]!='\n'){
-                initStr+=task[i]
-                count+=1
+    for (i in task.indices) {
+        if (task[i] == '\n' || count == 44) {
+            initStr += " ".repeat(44 - count) + "|\n|    |            |       |   |   |"
+            count = 0
+            if (task[i] != '\n') {
+                initStr += task[i]
+                count += 1
             }
-        }
-        else{
-            initStr+=task[i]
-            count+=1
+        } else {
+            initStr += task[i]
+            count += 1
         }
     }
-    initStr+=" ".repeat(44-count)+"|"+"\n+----+------------+-------+---+---+--------------------------------------------+"
+    initStr += " ".repeat(44 - count) + "|" + "\n+----+------------+-------+---+---+--------------------------------------------+"
     return initStr
 }
 
@@ -167,15 +238,20 @@ fun convertTaskToStr(task: String): String {
 fun main() {
     println("Input an action (add, print, edit, delete, end):")
     var inputLine = readln().trim()
-    val list = mutableListOf<TaskObject>()
+    val moshi = Moshi.Builder().add(KotlinJsonAdapterFactory()).add(LocalDateAdapter()).add(LocalTimeAdapter()).build()
+    val moshiAdapter = moshi.adapter<MutableList<TaskObject>>(Types.newParameterizedType(MutableList::class.java,TaskObject::class.java))
+    var list = mutableListOf<TaskObject>()
+    if (File("tasklist.json").exists()){
+        list = moshiAdapter.fromJson(File("tasklist.json").readText()) ?:  mutableListOf()
+    }
     val currentDate = Clock.System.now().toLocalDateTime(TimeZone.of("UTC+0")).date
     while (true) {
         when (inputLine) {
             "end" -> {
                 println("Tasklist exiting!")
+                File("tasklist.json").writeText(moshiAdapter.toJson(list))
                 return
             }
-
 
             "edit" -> {
                 if (list.isEmpty()) {
@@ -276,46 +352,3 @@ fun main() {
     }
 }
 
-private fun printTasklist(list: MutableList<TaskObject>, currentDate: LocalDate) {
-    println(
-        "+----+------------+-------+---+---+--------------------------------------------+\n" +
-                "| N  |    Date    | Time  | P | D |                   Task                     |\n" +
-                "+----+------------+-------+---+---+--------------------------------------------+"
-    )
-    for (i in list.indices) {
-        println(
-            "| ${i + 1}" +
-                    " ".repeat(3 - (i + 1).toString().length)
-                    + "| " + list[i].date
-                    + " | " + (if (list[i].time.hour < 10) "0${list[i].time.hour}" else list[i].time.hour)
-                    + ":" + (if (list[i].time.minute < 10) "0${list[i].time.minute}" else list[i].time.minute)
-                    + " | " + priorityToColor(list[i].priority)
-                    + " | " + dueToColor(daysUntil(currentDate, list[i].date))
-                    + " |" + convertTaskToStr(list[i].task)
-        )
-    }
-}
-
-fun priorityToColor(priority: String): String {
-    if (priority == "C") {
-        return ("\u001B[101m \u001B[0m")
-    } else if (priority == "H") {
-        return ("\u001B[103m \u001B[0m")
-    } else if (priority == "N") {
-        return ("\u001B[102m \u001B[0m")
-    } else if (priority == "L") {
-        return ("\u001B[104m \u001B[0m")
-    }
-    return ("")
-}
-
-fun dueToColor(due: String): String {
-    if (due == "I") {
-        return ("\u001B[102m \u001B[0m")
-    } else if (due == "T") {
-        return ("\u001B[103m \u001B[0m")
-    } else if (due == "O") {
-        return ("\u001B[101m \u001B[0m")
-    }
-    return ("")
-}
